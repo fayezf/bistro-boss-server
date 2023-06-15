@@ -2,6 +2,8 @@ const express = require('express');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const nodemailer = require("nodemailer");
+const mg = require('nodemailer-mailgun-transport');
 require('dotenv').config()
 const app = express();
 const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY)
@@ -11,6 +13,47 @@ const port = process.env.PORT || 5000;
 // middleware
 app.use(cors());
 app.use(express.json());
+
+// let transporter = nodemailer.createTransport({
+//   host: 'smtp.sendgrid.net',
+//   port: 587,
+//   auth: {
+//       user: "apikey",
+//       pass: process.env.SENDGRID_API_KEY
+//   }
+// })
+
+const auth = {
+  auth: {
+    api_key: process.env.EMAIL_PRIVATE_KEY,
+    domain: process.env.EMAIL_DOMAIN
+  }
+}
+
+const transporter = nodemailer.createTransport(mg(auth));
+
+// send confirmation email
+const sendPaymentConfirmationEmail = payment => {
+  transporter.sendMail({
+    from: "fayezm252@gmail.com", // verified sender email
+    to: "fayezm252@gmail.com", // recipient email
+    subject: "Your order is confirmed. Enjoy the food soon.", // Subject line
+    text: "Hello world!", // plain text body
+    html: `
+    <div>
+    <h2>Payment confirmed!</h2>
+    <p>Transaction id : ${payment.transactionId}</p>
+    </div>
+    `, // html body
+  }, function(error, info){
+    if (error) {
+      console.log(error);
+    } else {
+      console.log('Email sent: ' + info.response);
+    }
+  });
+ 
+}
 
 
 const verifyJWT = (req, res, next) => {
@@ -47,7 +90,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const usersCollection = client.db("bistroDb").collection("users");
     const menuCollection = client.db("bistroDb").collection("menu");
@@ -216,6 +259,9 @@ async function run() {
       const query = { _id: { $in: payment.cartItems.map(id => new ObjectId(id)) } };
       const deleteResult = await cartCollection.deleteMany(query);
 
+      // send an email confirming payment
+      sendPaymentConfirmationEmail(payment);
+
       res.send({ insertResult, deleteResult })
     })
 
@@ -287,7 +333,7 @@ async function run() {
 
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
